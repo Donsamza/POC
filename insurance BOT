@@ -113,7 +113,7 @@ if user_message:
         with st.chat_message("assistant"):
             st.markdown(f"**Bot:** {error_message}")
 
-if st.button("🧹 Clear Chat"):
+if st.button("🧹 Clear Chat History"):
     st.session_state.chat_history = []
 
 if st.sidebar.button("Clear Cache"):
