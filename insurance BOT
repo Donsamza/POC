@@ -1,0 +1,120 @@
+import os
+import streamlit as st
+from langchain_community.document_loaders import PyPDFLoader
+import pdfplumber
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.generativeai as genai
+from langchain_community.vectorstores import Chroma
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chains import ConversationalRetrievalChain
+from dotenv import load_dotenv
+
+
+load_dotenv()
+api_key = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=api_key)
+
+@st.cache_resource
+def load_pdfs_once(directory):
+    """
+    Loads and processes all PDFs in a directory only once. 
+    Stores the chunks (text, tables, grid) in a vector database with metadata for each chunk.
+    """
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    company_data = {}
+
+    for filename in os.listdir(directory):
+        if filename.endswith('.pdf'):
+            filepath = os.path.join(directory, filename)
+            company_name = filename.split('.')[0].upper()
+
+            loader = PyPDFLoader(filepath)
+            documents = loader.load()
+            texts, metadatas = [], []
+            
+            for i, doc in enumerate(documents):
+                chunks = text_splitter.split_text(doc.page_content)
+                texts.extend(chunks)
+                metadatas.extend([{"company": company_name, "page": i+1, "type": "text"} for _ in chunks])
+
+            with pdfplumber.open(filepath) as pdf:
+                for page_number, page in enumerate(pdf.pages):
+                    tables = page.extract_tables()
+                    for table_index, table in enumerate(tables):
+                        cleaned_table = [[cell if cell is not None else "" for cell in row] for row in table]
+                        table_text = "\n".join(["\t".join(row) for row in cleaned_table])
+                        table_chunks = text_splitter.split_text(table_text)
+                        texts.extend(table_chunks)
+                        metadatas.extend([{"company": company_name, "page": page_number + 1, "type": "table", "table_number": table_index} for _ in table_chunks])
+
+            embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+            db = Chroma.from_texts(texts, embeddings, metadatas=metadatas)
+            company_data[company_name] = db
+    
+    return company_data
+
+pdf_directory = "C:\\SSS\\Future\\POC"
+company_data = load_pdfs_once(pdf_directory)
+
+st.title("💼 Insurance Company Q&A Chatbot")
+st.sidebar.header("Select Insurance Company")
+
+selected_company = st.sidebar.selectbox(
+    "Choose a company:",
+    [" "] + list(company_data.keys())
+)
+
+if selected_company == " ":
+    st.write("Please select an insurance company from the sidebar.")
+else:
+    st.write(f"You have selected: {selected_company}. Now you can chat with me about this company!")
+
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+for message in st.session_state.chat_history:
+    role = message['role']
+    content = message['content']
+    if role == 'User':
+        with st.chat_message("user"):
+            st.markdown(f"**You:** {content}")
+    else:
+        with st.chat_message("assistant"):
+            st.markdown(f"**Bot:** {content}")
+
+user_message = st.chat_input("Type your message...")
+
+if user_message:
+    st.session_state.chat_history.append({"role": "User", "content": user_message})
+
+    with st.chat_message("user"):
+        st.markdown(f"**You:** {user_message}")
+
+    if selected_company and selected_company in company_data:
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+        retriever = company_data[selected_company].as_retriever(search_kwargs={"filter": {"company": selected_company}})
+        qa_chain = ConversationalRetrievalChain.from_llm(llm, retriever=retriever)
+
+        try:
+            response = qa_chain({"question": user_message, "chat_history": [(msg["role"], msg["content"]) for msg in st.session_state.chat_history]})
+            bot_response = response.get('answer', 'Answer not available')
+        except Exception as e:
+            bot_response = f"An error occurred: {e}"
+
+        st.session_state.chat_history.append({"role": "Bot", "content": bot_response})
+
+        with st.chat_message("assistant"):
+            st.markdown(f"**Bot:** {bot_response}")
+    else:
+        error_message = "Company not found or not selected."
+        st.session_state.chat_history.append({"role": "Bot", "content": error_message})
+        
+        with st.chat_message("assistant"):
+            st.markdown(f"**Bot:** {error_message}")
+
+if st.button("🧹 Clear Chat"):
+    st.session_state.chat_history = []
+
+if st.sidebar.button("Clear Cache"):
+    st.cache_resource.clear()
