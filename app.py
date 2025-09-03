@@ -898,7 +898,7 @@ class EnhancedUIManager:
         
         with col2:
             st.write("**Processing Options**")
-            remove_images = st.checkbox("Remove all images", help="Remove images and logos from documents")
+            remove_images = st.checkbox("Remove all logos", help="Remove logos from documents")
         
         if st.button("🚀 Start Bulk Processing", type="primary"):
             
@@ -960,7 +960,7 @@ class EnhancedUIManager:
         col1, col2 = st.columns(2)
         
         with col1:
-            remove_images = st.checkbox("Remove Images", help="Remove all images and logos")
+            remove_images = st.checkbox("Remove Logos", help="Remove all images and logos")
             
         with col2:
             if st.button("🔄 Apply Redactions", type="primary"):

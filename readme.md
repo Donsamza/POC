@@ -20,6 +20,7 @@ This project is a Streamlit app for file redaction. It allows you to upload file
     - Upload your file in the Streamlit interface.
     - Review the default redaction rules.
     - Add custom redaction rules (regular expressions) in the "Custom Rules" section.
+    - To remove  logos - click on remove image checkbox in the dashboard.
 
 ## Features
 
